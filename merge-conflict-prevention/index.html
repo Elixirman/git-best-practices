@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Zero-Conflict Git Loop</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #0b0e14;
+    --surface: #12161f;
+    --surface-2: #171c27;
+    --line: #232a3a;
+    --text: #e3e7ee;
+    --muted: #8b94a7;
+    --green: #3ddc84;
+    --green-dim: #1f7a4d;
+    --amber: #f2b155;
+    --mono: 'JetBrains Mono', 'Courier New', monospace;
+    --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+
+  :root:not([data-theme="light"]) { color-scheme: dark; }
+  :root[data-theme="light"] {
+    --ink: #f7f8fa;
+    --surface: #ffffff;
+    --surface-2: #f1f3f6;
+    --line: #dfe3ea;
+    --text: #1a1e27;
+    --muted: #5b6472;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --ink: #f7f8fa;
+      --surface: #ffffff;
+      --surface-2: #f1f3f6;
+      --line: #dfe3ea;
+      --text: #1a1e27;
+      --muted: #5b6472;
+    }
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--ink);
+    color: var(--text);
+    font-family: var(--sans);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  a { color: var(--green); }
+
+  .wrap { max-width: 760px; margin: 0 auto; padding: 0 1.75rem; }
+
+  /* ---------- HERO ---------- */
+  .hero {
+    padding: 5.5rem 0 4rem;
+    background:
+      radial-gradient(ellipse 700px 400px at 15% -10%, rgba(61,220,132,0.09), transparent 60%),
+      var(--ink);
+    border-bottom: 1px solid var(--line);
+  }
+
+  .kicker {
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    color: var(--green);
+    margin-bottom: 1.25rem;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+  }
+  .kicker::before {
+    content: '';
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 8px var(--green);
+    flex-shrink: 0;
+  }
+
+  h1 {
+    font-family: var(--sans);
+    font-weight: 800;
+    font-size: clamp(2.1rem, 5vw, 3.1rem);
+    letter-spacing: -0.02em;
+    line-height: 1.08;
+    max-width: 14ch;
+    margin-bottom: 1.1rem;
+  }
+
+  .hero p.lede {
+    color: var(--muted);
+    font-size: 1.08rem;
+    max-width: 46ch;
+    margin-bottom: 2.5rem;
+  }
+
+  /* ---------- TERMINAL ---------- */
+  .terminal {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 20px 50px -20px rgba(0,0,0,0.5);
+  }
+  .terminal-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.7rem 0.9rem;
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--line);
+  }
+  .dot { width: 10px; height: 10px; border-radius: 50%; }
+  .dot.r { background: #ff5f57; }
+  .dot.y { background: #febc2e; }
+  .dot.g { background: #28c840; }
+  .terminal-title {
+    margin-left: 0.5rem;
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    color: var(--muted);
+  }
+  .terminal-body {
+    padding: 1.4rem 1.5rem 1.6rem;
+    font-family: var(--mono);
+    font-size: 0.88rem;
+    min-height: 118px;
+  }
+  .terminal-line { color: var(--muted); white-space: pre; }
+  .terminal-line .prompt { color: var(--green); }
+  .terminal-line .out { color: var(--text); }
+  .caret {
+    display: inline-block;
+    width: 7px; height: 1em;
+    background: var(--green);
+    margin-left: 2px;
+    vertical-align: text-bottom;
+    animation: blink 1s steps(1) infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .caret { animation: none; opacity: 1; }
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* ---------- RULE ZERO ---------- */
+  .rule-zero {
+    margin: 3.5rem 0 1rem;
+    padding: 1.5rem 1.6rem;
+    border: 1px solid var(--amber);
+    background: rgba(242,177,85,0.06);
+    border-radius: 8px;
+  }
+  .rule-zero .tag {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    color: var(--amber);
+    letter-spacing: 0.02em;
+    margin-bottom: 0.5rem;
+    display: block;
+  }
+  .rule-zero p { color: var(--text); font-size: 0.98rem; }
+
+  /* ---------- GIT GRAPH ---------- */
+  .graph {
+    position: relative;
+    margin: 3rem 0 2rem;
+  }
+  .graph::before {
+    content: '';
+    position: absolute;
+    left: 21px;
+    top: 12px;
+    bottom: 12px;
+    width: 2px;
+    background: linear-gradient(var(--green-dim), var(--green) 15%, var(--green) 85%, var(--green-dim));
+    opacity: 0.55;
+  }
+
+  .commit {
+    position: relative;
+    padding: 0 0 2.6rem 4.6rem;
+  }
+  .commit:last-child { padding-bottom: 0; }
+
+  .node {
+    position: absolute;
+    left: 12px;
+    top: 4px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--surface);
+    border: 2px solid var(--green);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .node::after {
+    content: '';
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--green);
+  }
+
+  .step-label {
+    font-family: var(--mono);
+    font-size: 0.76rem;
+    color: var(--green);
+    letter-spacing: 0.03em;
+    margin-bottom: 0.35rem;
+  }
+
+  .commit h3 {
+    font-family: var(--sans);
+    font-weight: 700;
+    font-size: 1.2rem;
+    margin-bottom: 0.55rem;
+    letter-spacing: -0.01em;
+  }
+
+  .commit p {
+    color: var(--muted);
+    font-size: 0.96rem;
+    max-width: 58ch;
+    margin-bottom: 0.9rem;
+  }
+
+  .cmd {
+    display: block;
+    font-family: var(--mono);
+    font-size: 0.85rem;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 0.65rem 0.9rem;
+    color: var(--green);
+    overflow-x: auto;
+    max-width: 100%;
+  }
+  .cmd + .cmd { margin-top: 0.5rem; }
+  .cmd .comment { color: var(--muted); }
+
+  /* ---------- LOOP-BACK CARD ---------- */
+  .loopback {
+    margin-top: 1rem;
+    border-radius: 8px;
+    border: 1px dashed var(--line);
+    padding: 1.1rem 1.3rem;
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+  .loopback strong { color: var(--text); }
+
+  /* ---------- ONE-TIME CONFIG ---------- */
+  .config-block {
+    margin: 3.5rem 0 0;
+    padding: 1.75rem 1.75rem 1.9rem;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+  }
+  .config-block h2 {
+    font-size: 1.05rem;
+    font-weight: 700;
+    margin-bottom: 0.6rem;
+  }
+  .config-block p {
+    color: var(--muted);
+    font-size: 0.93rem;
+    margin-bottom: 1rem;
+    max-width: 58ch;
+  }
+
+  footer {
+    padding: 3rem 0 4rem;
+    color: var(--muted);
+    font-size: 0.85rem;
+    border-top: 1px solid var(--line);
+    margin-top: 3rem;
+  }
+
+  @media (max-width: 560px) {
+    .hero { padding: 3.5rem 0 2.75rem; }
+    .commit { padding-left: 3.6rem; }
+    .graph::before { left: 15px; }
+    .node { left: 6px; width: 18px; height: 18px; }
+  }
+</style>
+</head>
+<body>
+
+  <section class="hero">
+    <div class="wrap">
+      <div class="kicker">git workflow · captain's reference</div>
+      <h1>The loop that never conflicts</h1>
+      <p class="lede">Six steps, run in order, every time. Follow it and <code>git push</code> stops being something you brace for.</p>
+
+      <div class="terminal">
+        <div class="terminal-bar">
+          <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+          <span class="terminal-title">linux-guy@Ademichaelz</span>
+        </div>
+        <div class="terminal-body" id="term"></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="wrap">
+
+    <div class="rule-zero">
+      <span class="tag">RULE ZERO</span>
+      <p>Never edit the same file in two places between syncs — not on GitHub's website <em>and</em> on your laptop. Pick one place to edit. Treat GitHub as read-only except through <code>git push</code>. This one habit prevents almost every conflict before it can happen.</p>
+    </div>
+
+    <div class="graph">
+
+      <div class="commit">
+        <div class="node"></div>
+        <div class="step-label">STEP A</div>
+        <h3>Pull before you touch anything</h3>
+        <p>Every time you sit down to work — before editing a single file. Brings your local copy up to date with anything that changed on GitHub since you last looked, including edits from another machine.</p>
+        <code class="cmd">git pull</code>
+      </div>
+
+      <div class="commit">
+        <div class="node"></div>
+        <div class="step-label">STEP B</div>
+        <h3>Check status</h3>
+        <p>Confirms you're on the right branch and starting clean — nothing already staged, nothing already modified, fully in sync with the remote.</p>
+        <code class="cmd">git status</code>
+      </div>
+
+      <div class="commit">
+        <div class="node"></div>
+        <div class="step-label">STEP C</div>
+        <h3>Make your edits</h3>
+        <p>The only step where content actually changes. Edit the file normally — README, script, whatever it is. Everything else in this loop exists to keep you in sync with the remote.</p>
+      </div>
+
+      <div class="commit">
+        <div class="node"></div>
+        <div class="step-label">STEP D</div>
+        <h3>Stage and commit</h3>
+        <p>Committing locally doesn't touch GitHub yet — it's safe, and you can do it as many times as you like before pushing.</p>
+        <code class="cmd">git add &lt;file&gt;</code>
+        <code class="cmd">git commit -m "clear description of what changed"</code>
+      </div>
+
+      <div class="commit">
+        <div class="node"></div>
+        <div class="step-label">STEP E</div>
+        <h3>Pull again, right before pushing</h3>
+        <p>The step people skip — and the one that actually prevents conflicts. Time has passed since Step A. Pulling now, with your commit already made, lets Git merge in any new remote changes cleanly instead of your push getting rejected.</p>
+        <code class="cmd">git pull</code>
+      </div>
+
+      <div class="commit">
+        <div class="node"></div>
+        <div class="step-label">STEP F</div>
+        <h3>Push</h3>
+        <p>Because you just pulled in Step E, this goes through clean almost every time — your local branch already contains everything the remote has.</p>
+        <code class="cmd">git push</code>
+        <div class="loopback"><strong>Then repeat from Step A</strong> next time you sit down — this is a loop, not a one-off checklist.</div>
+      </div>
+
+    </div>
+
+    <div class="config-block">
+      <h2>One-time setup: keep history linear</h2>
+      <p>Run this once, on any machine — it applies to every repo from then on. When Step E's pull finds new remote commits, this replays your local commit on top of them instead of creating a merge-commit node, so your history stays a clean straight line.</p>
+      <code class="cmd">git config --global pull.rebase true</code>
+    </div>
+
+  </div>
+
+  <footer>
+    <div class="wrap">Pull → Status → Edit → Commit → Pull → Push. Loop back to A.</div>
+  </footer>
+
+<script>
+  const steps = [
+    { cmd: 'git pull', out: 'Already up to date.' },
+    { cmd: 'git status', out: 'On branch main\nnothing to commit, working tree clean' },
+    { cmd: 'git add README.md', out: '' },
+    { cmd: 'git commit -m "update docs"', out: '[main a1b2c3d] update docs' },
+    { cmd: 'git pull', out: 'Already up to date.' },
+    { cmd: 'git push', out: 'Everything up-to-date' }
+  ];
+
+  const term = document.getElementById('term');
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function renderStatic() {
+    term.innerHTML = steps.map(s =>
+      `<div class="terminal-line"><span class="prompt">$</span> ${s.cmd}</div>` +
+      (s.out ? `<div class="terminal-line out">${s.out.replace(/\n/g,'<br>')}</div>` : '')
+    ).join('');
+  }
+
+  if (reduceMotion) {
+    renderStatic();
+  } else {
+    let i = 0;
+    function typeStep() {
+      if (i >= steps.length) {
+        term.innerHTML += '<span class="caret"></span>';
+        setTimeout(() => { i = 0; term.innerHTML = ''; typeStep(); }, 2600);
+        return;
+      }
+      const { cmd, out } = steps[i];
+      const line = document.createElement('div');
+      line.className = 'terminal-line';
+      line.innerHTML = '<span class="prompt">$</span> ';
+      term.appendChild(line);
+      let c = 0;
+      const typing = setInterval(() => {
+        line.innerHTML = '<span class="prompt">$</span> ' + cmd.slice(0, c) + '<span class="caret"></span>';
+        c++;
+        if (c > cmd.length) {
+          clearInterval(typing);
+          line.innerHTML = '<span class="prompt">$</span> ' + cmd;
+          if (out) {
+            const outLine = document.createElement('div');
+            outLine.className = 'terminal-line out';
+            outLine.textContent = out;
+            term.appendChild(outLine);
+          }
+          i++;
+          setTimeout(typeStep, 500);
+        }
+      }, 28);
+    }
+    typeStep();
+  }
+</script>
+
+</body>
+</html>
