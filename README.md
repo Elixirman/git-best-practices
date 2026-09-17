@@ -2,6 +2,8 @@
 
 A small, growing collection of reference guides for clean, predictable git usage — written up as standalone visual pages rather than plain docs.
 
+![The Simple cycle](git-fix-schema.png)
+
 ## Guides
 
 | Guide | What it covers |
